@@ -3,19 +3,9 @@ from . import pose_blender_dcc_core
 
 
 class PoseBlenderMaya(pose_blender_dcc_core.PoseBlenderCoreInterface):
+
     def __init__(self):
-        self.active_pose = None
-        self.blend_pre_values = {}
-        self.blend_post_values = {}
-
-    def set_active_pose(self, pose_asset):
-        self.active_pose = pose_asset
-
-    def cache_pre_blend(self, active_rig):
-        self.blend_pre_values = self.get_control_values(active_rig)
-
-    def cache_blend_target(self, active_rig):
-        self.blend_post_values = self.get_control_values(active_rig)
+        super(PoseBlenderMaya, self).__init__()
 
     def get_controllers(self, active_rig):
         return pm.selected()
@@ -24,7 +14,7 @@ class PoseBlenderMaya(pose_blender_dcc_core.PoseBlenderCoreInterface):
         current_pose = {}
         for controls in self.get_controllers(active_rig):
             for a in controls.listAttr(keyable=True, userDefined=False):
-                if "space" in a.attrName():
+                if a.attrName() in self.blend_ignore_attr_names:
                     continue
                 current_pose[a] = a.get()
         return current_pose
@@ -35,11 +25,6 @@ class PoseBlenderMaya(pose_blender_dcc_core.PoseBlenderCoreInterface):
 
             blend_result = float_lerp(pre_val, target_val, weight)
             attr.set(blend_result)
-
-    def remove_caches(self):
-        self.active_pose = None
-        self.blend_pre_values = {}
-        self.blend_post_values = {}
 
 
 def float_lerp(float_a, float_b, interp_val):
