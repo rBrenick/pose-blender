@@ -64,6 +64,6 @@ class PoseBlenderCoreInterface(object):
 
         return pose_assets  # type: [k.PoseAsset]
 
-    def apply_pose_asset(self, pose_asset, rig_name, on_selected=True):
+    def apply_pose_asset(self, pose_asset, rig_name):
         pass
 
