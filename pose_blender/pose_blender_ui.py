@@ -88,6 +88,7 @@ class PoseBlenderWidget(QtWidgets.QWidget):
             pose_asset,
             self.get_active_rig(),
         )
+        pbs.dcc.remove_caches()
 
     def filter_poses(self, filter_text):
         for pose_widget in self.get_pose_widgets():  # type: PoseWidget
