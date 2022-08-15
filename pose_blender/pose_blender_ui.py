@@ -12,6 +12,9 @@ standalone_app = None
 if not QtWidgets.QApplication.instance():
     standalone_app = QtWidgets.QApplication(sys.argv)
 
+    from .resources import stylesheets
+    stylesheets.apply_standalone_stylesheet()
+
 
 class PoseBlenderWidget(QtWidgets.QWidget):
     def __init__(self, *args, **kwargs):
