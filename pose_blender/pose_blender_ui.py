@@ -75,6 +75,7 @@ class PoseBlenderWidget(QtWidgets.QWidget):
 
     def update_from_scene(self):
         rig_names = list(pbs.dcc.get_rigs_in_scene().keys())
+        self.ui.rig_chooser.clear()
         self.ui.rig_chooser.addItems(rig_names)
 
     def initialize_blender_engine(self, pose_asset):
