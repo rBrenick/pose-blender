@@ -6,11 +6,20 @@ log = pose_blender_logger.get_logger()
 
 class PoseBlenderCoreInterface(object):
     def __init__(self):
-        self.active_pose = None
+        self.active_rig = None
+
+        # every time you click a pose, this will be set
+        self.selected_pose = None
+
+        # when you start blending poses, the active pose will be set
+        self.blend_pose = None
+
         self.blend_pre_values = {}
         self.blend_post_values = {}
 
         self.blend_ignore_attr_names = []
+
+        self.right_click_menu_items = []
 
     def log_missing_implementation(self, func):
         log.error("'{}.{}()' has not been implemented".format(self.__class__.__name__, func.__name__))
@@ -18,8 +27,8 @@ class PoseBlenderCoreInterface(object):
     ######################################################################################
     # implementations come pre-built
 
-    def set_active_pose(self, pose_asset):
-        self.active_pose = pose_asset
+    def set_blend_pose(self, pose_asset):
+        self.blend_pose = pose_asset
 
     def cache_pre_blend(self, active_rig):
         self.blend_pre_values = self.get_control_values(active_rig)
@@ -34,7 +43,7 @@ class PoseBlenderCoreInterface(object):
         pass
 
     def remove_caches(self):
-        self.active_pose = None
+        self.blend_pose = None
         self.blend_pre_values = {}
         self.blend_post_values = {}
 
@@ -67,3 +76,8 @@ class PoseBlenderCoreInterface(object):
     def apply_pose_asset(self, pose_asset, rig_name):
         pass
 
+    ######################################################################################
+    # Optional implementations
+
+    def get_project_widgets(self):
+        return []

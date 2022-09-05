@@ -7,4 +7,10 @@ class PoseAsset(object):
         self.local_path = ""
         self.pose_name = ""
         self.pose_data = None
-        self.thumbnail_data = None
+        self.thumbnail_image = None  # type: QtGui.QImage
+
+        # p4
+        self.needs_sync = True
+
+    def update(self):
+        pass

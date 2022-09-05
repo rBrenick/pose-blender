@@ -1,5 +1,6 @@
 import sys
 
+from . import resources as resources
 from . import pose_blender_constants as k
 from . import pose_blender_logger
 from . import pose_blender_system as pbs
@@ -25,6 +26,9 @@ class PoseBlenderWidget(QtWidgets.QWidget):
         main_layout.setContentsMargins(2, 2, 2, 2)
         main_layout.addWidget(self.ui)
         self.setLayout(main_layout)
+
+        for proj_widget in pbs.dcc.get_project_widgets():
+            self.ui.project_widget_layouts.addWidget(proj_widget)
 
         self.blender_engine = None
 
@@ -61,19 +65,25 @@ class PoseBlenderWidget(QtWidgets.QWidget):
             pose_widget.list_widget_widget = widget
             pose_widget.list_widget_item = lwi
 
-        rig_names = list(pbs.dcc.get_rigs_in_scene().keys())
-        self.ui.rig_chooser.addItems(rig_names)
+        self.ui.rig_chooser.currentTextChanged.connect(self.set_choosen_rig)
 
+        self.update_from_scene()
+
+        self.ui.refresh_button.clicked.connect(self.update_from_scene)
         self.ui.pose_filter.textChanged.connect(self.filter_poses)
         self.ui.size_slider.valueChanged.connect(self.update_pose_size)
 
+    def update_from_scene(self):
+        rig_names = list(pbs.dcc.get_rigs_in_scene().keys())
+        self.ui.rig_chooser.addItems(rig_names)
+
     def initialize_blender_engine(self, pose_asset):
-        if pbs.dcc.active_pose == pose_asset:
+        if pbs.dcc.blend_pose == pose_asset:
             log.info("same pose asset, keeping existing blender engine")
             return
 
         log.info("Starting Pose Blender Engine")
-        self.blender_engine = pbs.dcc.set_active_pose(pose_asset)
+        self.blender_engine = pbs.dcc.set_blend_pose(pose_asset)
         pbs.dcc.cache_pre_blend(self.get_active_rig())
         pbs.dcc.apply_pose_asset(
             pose_asset,
@@ -117,6 +127,10 @@ class PoseBlenderWidget(QtWidgets.QWidget):
     def get_active_rig(self):
         return self.ui.rig_chooser.currentText()
 
+    def set_choosen_rig(self, rig_name):
+        pbs.dcc.active_rig = rig_name
+        log.info("Set active rig: {}".format(rig_name))
+
 
 class PoseWidget(QtWidgets.QPushButton):
     apply_pose = QtCore.Signal(k.PoseAsset)
@@ -138,23 +152,34 @@ class PoseWidget(QtWidgets.QPushButton):
         self.image_size = 180
         self.thumbnail_margin = 20
 
-        if pose_asset.thumbnail_data:
-            icon = QtGui.QIcon()
-            qimg = QtGui.QImage.fromData(pose_asset.thumbnail_data)
-            pixmap = QtGui.QPixmap.fromImage(qimg)
-            icon.addPixmap(pixmap)
-            self.setIcon(icon)
-
+        self.set_thumbnail_from_pose_asset()
         self.update_size(self.image_size)
 
         self.value_display_overlay = ValueDisplayOverlay(self)
         self.value_display_overlay.setVisible(False)
 
     def mousePressEvent(self, event):
+        pbs.dcc.selected_pose = self.pose_asset
+
         if event.buttons() == QtCore.Qt.MidButton:
             self.start_blending.emit(self.pose_asset)
-        else:
-            self.apply_pose.emit(self.pose_asset)
+
+        elif event.buttons() == QtCore.Qt.LeftButton:
+
+            if self.pose_asset.needs_sync:
+                self.pose_asset.update()
+                self.set_thumbnail_from_pose_asset()
+
+            self.trigger_apply_pose()
+
+        elif event.buttons() == QtCore.Qt.RightButton:
+            action_list = [
+                {"Apply Pose": self.trigger_apply_pose},
+                "-"
+            ]
+            action_list.extend(pbs.dcc.right_click_menu_items)
+            ui_utils.build_menu_from_action_list(action_list)
+
         event.accept()
 
     def mouseReleaseEvent(self, event):
@@ -182,6 +207,20 @@ class PoseWidget(QtWidgets.QPushButton):
 
         if self.list_widget_item and self.list_widget_widget:
             self.list_widget_item.setSizeHint(self.list_widget_widget.sizeHint())
+
+    def trigger_apply_pose(self):
+        self.apply_pose.emit(self.pose_asset)
+
+    def set_thumbnail_from_pose_asset(self):
+        if self.pose_asset.thumbnail_image and not self.pose_asset.needs_sync:
+            thumbnail = self.pose_asset.thumbnail_image
+        else:
+            thumbnail = QtGui.QImage(resources.get_image_path("p4_out_of_sync"))
+
+        icon = QtGui.QIcon()
+        pixmap = QtGui.QPixmap.fromImage(thumbnail)
+        icon.addPixmap(pixmap)
+        self.setIcon(icon)
 
 
 class ValueDisplayOverlay(QtWidgets.QWidget):
@@ -221,7 +260,11 @@ class PoseBlenderUI(QtWidgets.QWidget):
         self.pose_grid.setResizeMode(QtWidgets.QListWidget.Adjust)
         self.pose_grid.setLayoutMode(QtWidgets.QListWidget.Batched)
 
+        self.project_widget_layouts = QtWidgets.QVBoxLayout()
+
         self.rig_chooser = QtWidgets.QComboBox()
+        self.refresh_button = QtWidgets.QPushButton("Refresh")
+        self.refresh_button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
 
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.setSpacing(2)
@@ -229,7 +272,11 @@ class PoseBlenderUI(QtWidgets.QWidget):
         main_layout.addWidget(self.pose_filter)
         main_layout.addWidget(self.size_slider)
         main_layout.addWidget(self.pose_grid)
-        main_layout.addWidget(self.rig_chooser)
+        rig_layout = QtWidgets.QHBoxLayout()
+        rig_layout.addWidget(self.rig_chooser)
+        rig_layout.addWidget(self.refresh_button)
+        main_layout.addLayout(rig_layout)
+        main_layout.addLayout(self.project_widget_layouts)
         self.setLayout(main_layout)
 
 
@@ -248,6 +295,8 @@ def main(refresh=False):
     if standalone_app:
         ui_utils.standalone_app_window = win
         sys.exit(standalone_app.exec_())
+
+    return win
 
 
 if __name__ == "__main__":
