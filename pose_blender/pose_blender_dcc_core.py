@@ -79,5 +79,9 @@ class PoseBlenderCoreInterface(object):
     ######################################################################################
     # Optional implementations
 
+    def set_pose_favorite_state(self, pose_asset, state=True):
+        self.log_missing_implementation(self.set_pose_favorite_state)
+        pass
+
     def get_project_widgets(self):
         return []

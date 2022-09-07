@@ -1,4 +1,5 @@
 import sys
+import threading
 
 from . import resources as resources
 from . import pose_blender_constants as k
@@ -27,10 +28,23 @@ class PoseBlenderWidget(QtWidgets.QWidget):
         main_layout.addWidget(self.ui)
         self.setLayout(main_layout)
 
+        self.blender_engine = None
+
         for proj_widget in pbs.dcc.get_project_widgets():
             self.ui.project_widget_layouts.addWidget(proj_widget)
 
-        self.blender_engine = None
+        self.ui.rig_chooser.currentTextChanged.connect(self.set_choosen_rig)
+        self.ui.refresh_rigs.clicked.connect(self.update_from_scene)
+        self.ui.refresh_poses.clicked.connect(self.refresh_poses)
+        self.ui.pose_filter.textChanged.connect(self.filter_poses)
+        self.ui.grid_toggle.clicked.connect(self.toggle_icon_mode)
+        self.ui.size_slider.valueChanged.connect(self.update_pose_size)
+
+        self.refresh_poses()
+        self.update_from_scene()
+
+    def refresh_poses(self):
+        self.ui.pose_grid.clear()
 
         for pose_asset in pbs.dcc.get_poses():  # type: k.PoseAsset
             pose_widget = PoseWidget(self, pose_asset)
@@ -40,7 +54,6 @@ class PoseBlenderWidget(QtWidgets.QWidget):
 
             # Create widget
             widget = QtWidgets.QWidget()
-            widget.setStyleSheet("background-color: (100, 100, 100)")
             widget.setToolTip(pose_asset.pose_name)
 
             pose_label = QtWidgets.QLabel()
@@ -48,7 +61,7 @@ class PoseBlenderWidget(QtWidgets.QWidget):
             pose_label.setText(pose_asset.pose_name)
             pose_label.setSizePolicy(QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Minimum)
 
-            widget_layout = QtWidgets.QVBoxLayout()
+            widget_layout = QtWidgets.QBoxLayout(QtWidgets.QBoxLayout.Down)
             widget_layout.addWidget(pose_widget)
             widget_layout.addWidget(pose_label)
             widget_layout.setContentsMargins(3, 3, 3, 3)
@@ -62,16 +75,23 @@ class PoseBlenderWidget(QtWidgets.QWidget):
             self.ui.pose_grid.addItem(lwi)
             self.ui.pose_grid.setItemWidget(lwi, widget)
             lwi.setData(QtCore.Qt.UserRole, pose_widget)
-            pose_widget.list_widget_widget = widget
+            pose_widget.item_main_widget = widget
             pose_widget.list_widget_item = lwi
+            pose_widget.item_label = pose_label
 
-        self.ui.rig_chooser.currentTextChanged.connect(self.set_choosen_rig)
+        self.refresh_grid_display()
+        self.start_thumbnail_thread()
 
-        self.update_from_scene()
+    def start_thumbnail_thread(self):
+        thumbnail_thread = threading.Thread(target=self.generate_thumbnails)
+        thumbnail_thread.start()
 
-        self.ui.refresh_button.clicked.connect(self.update_from_scene)
-        self.ui.pose_filter.textChanged.connect(self.filter_poses)
-        self.ui.size_slider.valueChanged.connect(self.update_pose_size)
+    def generate_thumbnails(self):
+        for pose_widget in self.get_pose_widgets():  # type: PoseWidget
+            try:
+                pose_widget.set_thumbnail_from_pose_asset(from_disk=True)
+            except Exception as e:
+                log.warning("Failed to parse thumbnail data from: {} - {}".format(pose_widget.pose_asset.pose_name, e))
 
     def update_from_scene(self):
         rig_names = list(pbs.dcc.get_rigs_in_scene().keys())
@@ -132,6 +152,31 @@ class PoseBlenderWidget(QtWidgets.QWidget):
         pbs.dcc.active_rig = rig_name
         log.info("Set active rig: {}".format(rig_name))
 
+    def refresh_grid_display(self):
+        if self.ui.pose_grid.viewMode() == QtWidgets.QListWidget.IconMode:
+            layout_dir = QtWidgets.QBoxLayout.Down
+            label_size_policy = QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Minimum
+        else:
+            layout_dir = QtWidgets.QBoxLayout.LeftToRight
+            label_size_policy = QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Minimum
+
+        # update pose widget display
+        for pose_widget in self.get_pose_widgets():  # type: PoseWidget
+            layout = pose_widget.item_main_widget.layout()  # type: QtWidgets.QBoxLayout
+            pose_label = pose_widget.item_label
+
+            layout.setDirection(layout_dir)
+            pose_label.setSizePolicy(*label_size_policy)
+
+        self.update_pose_size(self.ui.size_slider.value())
+
+    def toggle_icon_mode(self):
+        if self.ui.pose_grid.viewMode() == QtWidgets.QListWidget.IconMode:
+            self.ui.pose_grid.setViewMode(QtWidgets.QListWidget.ListMode)
+        else:
+            self.ui.pose_grid.setViewMode(QtWidgets.QListWidget.IconMode)
+        self.refresh_grid_display()
+
 
 class PoseWidget(QtWidgets.QPushButton):
     apply_pose = QtCore.Signal(k.PoseAsset)
@@ -149,15 +194,17 @@ class PoseWidget(QtWidgets.QPushButton):
 
         self.pose_asset = pose_asset
         self.list_widget_item = None  # type: QtWidgets.QListWidgetItem
-        self.list_widget_widget = None  # type: QtWidgets.QListWidgetItem
+        self.item_main_widget = None  # type: QtWidgets.QListWidgetItem
+        self.item_label = None # type: QtWidgets.QLabel
         self.image_size = 180
-        self.thumbnail_margin = 20
 
         self.set_thumbnail_from_pose_asset()
         self.update_size(self.image_size)
 
         self.value_display_overlay = ValueDisplayOverlay(self)
         self.value_display_overlay.setVisible(False)
+
+        self.set_favorite_display()
 
     def mousePressEvent(self, event):
         pbs.dcc.selected_pose = self.pose_asset
@@ -170,14 +217,24 @@ class PoseWidget(QtWidgets.QPushButton):
             if self.pose_asset.needs_sync:
                 self.pose_asset.update()
                 self.set_thumbnail_from_pose_asset()
+                event.accept()
+                return
 
             self.trigger_apply_pose()
 
         elif event.buttons() == QtCore.Qt.RightButton:
+
             action_list = [
                 {"Apply Pose": self.trigger_apply_pose},
                 "-"
             ]
+
+            if self.pose_asset.is_favorite:
+                action_list.append({"Un-Favorite": self.remove_pose_as_favorite})
+            else:
+                action_list.append({"Favorite": self.set_pose_as_favorite})
+            action_list.append("-")
+
             action_list.extend(pbs.dcc.right_click_menu_items)
             ui_utils.build_menu_from_action_list(action_list)
 
@@ -201,27 +258,48 @@ class PoseWidget(QtWidgets.QPushButton):
         event.accept()
 
     def update_size(self, size):
+        margin = size * 0.1
         self.image_size = size
         self.setMinimumWidth(self.image_size)
         self.setMinimumHeight(self.image_size)
-        self.setIconSize(QtCore.QSize(self.image_size - self.thumbnail_margin, self.image_size - self.thumbnail_margin))
+        self.setIconSize(QtCore.QSize(self.image_size - margin, self.image_size - margin))
 
-        if self.list_widget_item and self.list_widget_widget:
-            self.list_widget_item.setSizeHint(self.list_widget_widget.sizeHint())
+        if self.list_widget_item and self.item_main_widget:
+            self.list_widget_item.setSizeHint(self.item_main_widget.sizeHint())
 
     def trigger_apply_pose(self):
         self.apply_pose.emit(self.pose_asset)
 
-    def set_thumbnail_from_pose_asset(self):
-        if self.pose_asset.thumbnail_image and not self.pose_asset.needs_sync:
-            thumbnail = self.pose_asset.thumbnail_image
-        else:
+    def set_pose_as_favorite(self):
+        pbs.dcc.set_pose_favorite_state(self.pose_asset, True)
+        self.set_favorite_display()
+
+    def remove_pose_as_favorite(self):
+        pbs.dcc.set_pose_favorite_state(self.pose_asset, False)
+        self.set_favorite_display()
+
+    def set_thumbnail_from_pose_asset(self, from_disk=False):
+        if from_disk:
+            self.pose_asset.set_thumbnail_data()
+
+        if self.pose_asset.needs_sync:
             thumbnail = QtGui.QImage(resources.get_image_path("p4_out_of_sync"))
+        else:
+            if self.pose_asset.thumbnail_image:
+                thumbnail = self.pose_asset.thumbnail_image
+            else:
+                thumbnail = QtGui.QImage(resources.get_image_path("undefined"))
 
         icon = QtGui.QIcon()
         pixmap = QtGui.QPixmap.fromImage(thumbnail)
         icon.addPixmap(pixmap)
         self.setIcon(icon)
+
+    def set_favorite_display(self):
+        if self.pose_asset.is_favorite:
+            self.setStyleSheet("background-color: rgb(255, 211, 57)")
+        else:
+            self.setStyleSheet("")
 
 
 class ValueDisplayOverlay(QtWidgets.QWidget):
@@ -256,7 +334,11 @@ class PoseBlenderUI(QtWidgets.QWidget):
         self.size_slider.setRange(20, 960)
         self.size_slider.setValue(180)
 
+        self.grid_toggle = QtWidgets.QPushButton("List/Grid")
+        self.refresh_poses = QtWidgets.QPushButton("Refresh")
+
         self.pose_grid = QtWidgets.QListWidget()
+        self.pose_grid.setVerticalScrollMode(QtWidgets.QListWidget.ScrollPerPixel)
         self.pose_grid.setViewMode(QtWidgets.QListWidget.IconMode)
         self.pose_grid.setResizeMode(QtWidgets.QListWidget.Adjust)
         self.pose_grid.setLayoutMode(QtWidgets.QListWidget.Batched)
@@ -264,19 +346,27 @@ class PoseBlenderUI(QtWidgets.QWidget):
         self.project_widget_layouts = QtWidgets.QVBoxLayout()
 
         self.rig_chooser = QtWidgets.QComboBox()
-        self.refresh_button = QtWidgets.QPushButton("Refresh")
-        self.refresh_button.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
+        self.refresh_rigs = QtWidgets.QPushButton("Refresh")
+        self.refresh_rigs.setSizePolicy(QtWidgets.QSizePolicy.Fixed, QtWidgets.QSizePolicy.Fixed)
 
         main_layout = QtWidgets.QVBoxLayout()
         main_layout.setSpacing(2)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self.pose_filter)
-        main_layout.addWidget(self.size_slider)
+
+        grid_controls_layout = QtWidgets.QHBoxLayout()
+        grid_controls_layout.addWidget(self.size_slider)
+        grid_controls_layout.addWidget(self.grid_toggle)
+        grid_controls_layout.addWidget(self.refresh_poses)
+        main_layout.addLayout(grid_controls_layout)
+
         main_layout.addWidget(self.pose_grid)
+
         rig_layout = QtWidgets.QHBoxLayout()
         rig_layout.addWidget(self.rig_chooser)
-        rig_layout.addWidget(self.refresh_button)
+        rig_layout.addWidget(self.refresh_rigs)
         main_layout.addLayout(rig_layout)
+
         main_layout.addLayout(self.project_widget_layouts)
         self.setLayout(main_layout)
 
