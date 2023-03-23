@@ -99,6 +99,9 @@ class PoseBlenderWidget(QtWidgets.QWidget):
         self.ui.rig_chooser.addItems(rig_names)
 
     def initialize_blender_engine(self, pose_asset):
+        if not self.get_active_rig():
+            self.update_from_scene()
+
         if pbs.dcc.blend_pose == pose_asset:
             log.info("same pose asset, keeping existing blender engine")
             return
@@ -118,6 +121,13 @@ class PoseBlenderWidget(QtWidgets.QWidget):
         pbs.dcc.blend_cached_pose(weight)
 
     def apply_pose(self, pose_asset):
+        if not self.get_active_rig():
+            self.update_from_scene()
+
+        if not self.get_active_rig():
+            log.warning("Failed to find rig in scene")
+            return
+
         pbs.dcc.apply_pose_asset(
             pose_asset,
             self.get_active_rig(),
