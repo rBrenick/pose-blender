@@ -202,7 +202,7 @@ class PoseWidget(QtWidgets.QPushButton):
         """
         super(PoseWidget, self).__init__(parent)
 
-        self.pose_asset = pose_asset
+        self.pose_asset = pose_asset  # type: k.PoseAsset
         self.list_widget_item = None  # type: QtWidgets.QListWidgetItem
         self.item_main_widget = None  # type: QtWidgets.QListWidgetItem
         self.item_label = None # type: QtWidgets.QLabel

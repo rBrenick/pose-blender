@@ -9,7 +9,7 @@ class PoseBlenderCoreInterface(object):
         self.active_rig = None
 
         # every time you click a pose, this will be set
-        self.selected_pose = None
+        self.selected_pose = None  # type: k.PoseAsset
 
         # when you start blending poses, the active pose will be set
         self.blend_pose = None
