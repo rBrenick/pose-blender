@@ -135,10 +135,20 @@ class PoseBlenderWidget(QtWidgets.QWidget):
         pbs.dcc.remove_caches()
 
     def filter_poses(self, filter_text):
+
+        filter_tokens = filter_text.lower().split(" ")
+
         for pose_widget in self.get_pose_widgets():  # type: PoseWidget
-            pose_widget.list_widget_item.setHidden(False)
-            if filter_text.lower() not in pose_widget.pose_asset.pose_name.lower():
-                pose_widget.list_widget_item.setHidden(True)
+
+            show_pose = True
+            for filter_token in filter_tokens:
+                if not filter_token:
+                    continue
+                if filter_token not in pose_widget.pose_asset.pose_name.lower():
+                    show_pose = False
+                    break
+
+            pose_widget.list_widget_item.setHidden(not show_pose)
 
     def update_pose_size(self, new_size):
         for pose_widget in self.get_pose_widgets():  # type: PoseWidget
