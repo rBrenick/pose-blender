@@ -329,7 +329,8 @@ class ValueDisplayOverlay(QtWidgets.QWidget):
         self.weight = 0.0
 
         palette = QtGui.QPalette(self.palette())
-        palette.setColor(palette.Background, QtCore.Qt.transparent)
+        # QPalette.Background was a deprecated alias for Window and is gone in Qt6
+        palette.setColor(QtGui.QPalette.Window, QtCore.Qt.transparent)
         self.setPalette(palette)
 
     def paintEvent(self, event):
