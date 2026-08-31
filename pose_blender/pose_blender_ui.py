@@ -229,7 +229,8 @@ class PoseWidget(QtWidgets.QPushButton):
     def mousePressEvent(self, event):
         pbs.dcc.selected_pose = self.pose_asset
 
-        if event.buttons() == QtCore.Qt.MidButton:
+        # Qt.MidButton was a deprecated alias for MiddleButton and is gone in Qt6
+        if event.buttons() == QtCore.Qt.MiddleButton:
             self.start_blending.emit(self.pose_asset)
 
         elif event.buttons() == QtCore.Qt.LeftButton:
@@ -264,7 +265,7 @@ class PoseWidget(QtWidgets.QPushButton):
         self.value_display_overlay.setVisible(False)
 
     def mouseMoveEvent(self, event):
-        if event.buttons() == QtCore.Qt.MidButton:
+        if event.buttons() == QtCore.Qt.MiddleButton:
             weight_value = 1.0 - event.y() / self.image_size
             self.blend_active_pose.emit(weight_value)
 
@@ -329,7 +330,8 @@ class ValueDisplayOverlay(QtWidgets.QWidget):
         self.weight = 0.0
 
         palette = QtGui.QPalette(self.palette())
-        palette.setColor(palette.Background, QtCore.Qt.transparent)
+        # QPalette.Background was a deprecated alias for Window and is gone in Qt6
+        palette.setColor(QtGui.QPalette.Window, QtCore.Qt.transparent)
         self.setPalette(palette)
 
     def paintEvent(self, event):
